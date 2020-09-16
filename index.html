@@ -1,0 +1,140 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <link rel="stylesheet" href="css/app.css" />
+    <link rel="stylesheet" href="https://www.w3schools.com/w3css/4/w3.css" />
+    <link
+      rel="stylesheet"
+      href="https://www.w3schools.com/lib/w3-theme-black.css"
+    />
+    <script
+      src="https://kit.fontawesome.com/334fd382fc.js"
+      crossorigin="anonymous"
+    ></script>
+    <title>Menu</title>
+  </head>
+  <body>
+    <header class="w3-container w3-theme w3-padding" id="myHeader">
+      <div class="w3-center">
+        <h1 class="w3-xxxlarge w3-animate-bottom w3-padding">COVID GO</h1>
+        <div class="w3-padding-32">
+          <button
+            class="w3-btn w3-xlarge w3-dark-grey w3-hover-light-grey"
+            onClick="window.location='Player.html'"
+          >
+            Play
+          </button>
+        </div>
+      </div>
+    </header>
+
+    <div class="w3-row-padding w3-center w3-margin-top">
+      <div class="w3-third">
+        <div class="w3-card w3-container" style="min-height: 460px">
+          <h3>About Us</h3>
+          <br />
+          <i
+            class="fas fa-address-card w3-margin-bottom w3-text-theme"
+            style="font-size: 120px"
+          ></i>
+          <p>We are TNTC</p>
+          <p>A project using Google Map/Vue.Js/Firebase</p>
+          <p>A Team of 4</p>
+          <p>Have Fun. Good Game</p>
+        </div>
+      </div>
+
+      <div class="w3-third">
+        <div class="w3-card w3-container" style="min-height: 460px">
+          <h3>How to Play</h3>
+          <br />
+          <i
+            class="fas fa-keyboard w3-margin-bottom w3-text-theme"
+            style="font-size: 120px"
+          ></i>
+          <p>Use Arrow keys or WSAD to walk around</p>
+          <p>Get as many EXP as you can</p>
+          <p>Look out for BOOMsss</p>
+          <p>Level up to preceed to next MAP</p>
+          <p>Get Lives. Entering Portal cost 1 life</p>
+        </div>
+      </div>
+
+      <div class="w3-third">
+        <div class="w3-card w3-container" style="min-height: 460px">
+          <h3>Ranking</h3>
+          <br />
+        <div
+          id="app"
+          v-cloak
+        >
+      <table class="table">
+        <tr>
+            <th>Name</th>
+            <th>Level</th>
+            <th>Experience</th>
+            <th>Lives</th>
+            <th>State</th>
+        </tr>
+        <tr v-for="h of history">
+          <td>{{ h.name }}</td>
+          <td>{{ h.level }}</td>
+          <td>{{ h.exp }}</td>
+          <td>{{ h.lives }}</td>
+          <td>{{ h.state == true ? 'Win' : 'Lose' }}</td>
+        </tr>
+      </table>
+      </div>
+      </div>
+    </div>
+
+    <script src="https://www.gstatic.com/firebasejs/7.17.1/firebase-app.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/7.17.1/firebase-firestore.js"></script>
+    <script src="js/jquery.slim.js"></script>
+    <script src="js/vue.js"></script>
+    <script src="js/app.js"></script>
+
+    <script>
+      firebase.initializeApp({
+        projectId: 'chanhy-981018',
+      });
+
+      const ref = firebase.firestore().collection('history');
+
+      const vm = new Vue({
+        el: '#app',
+        data: {
+          history: []
+        },
+        created() {
+          ref.onSnapshot(snap => {
+            snap.docChanges().forEach(change => {
+              const { type, doc } = change;
+
+              if (type == 'added') {
+                update(doc.id, doc.data());
+              }
+            });
+          });
+        }
+        
+      });
+
+      function update(id, data){
+        let p = {
+          id,
+          name: data.name,
+          level: data.level,
+          exp: data.exp,
+          lives: data.lives,
+          state: data.win
+        }
+        vm.history.push(p);
+
+      }
+
+    </script>
+  </body>
+</html>

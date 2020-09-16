@@ -1,0 +1,388 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <link rel="shortcut icon" href="image/favicon.png" />
+    <link rel="stylesheet" href="css/app.css" />
+    <title>Admin Page</title>
+    <style>
+      main {
+        display: grid;
+        gap: 10px;
+        grid-template-rows: auto 1fr;
+        grid-template-columns: 250px 1fr;
+        grid-template-areas: 'panel map' 'items map';
+        overflow: auto;
+      }
+
+      #panel {
+        grid-area: panel;
+      }
+
+      #map {
+        grid-area: map;
+        border: 1px solid #333;
+      }
+
+      #items {
+        grid-area: items;
+        overflow-y: scroll;
+      }
+
+      .item {
+        border: 1px solid #666;
+        padding: 2px;
+        margin-bottom: 2px;
+        cursor: pointer;
+        position: relative;
+        border-radius: 2px;
+      }
+
+      .item:hover {
+        background-color: #ccc;
+      }
+
+      .item img {
+        border: 1px solid #666;
+        width: 37px;
+        height: 37px;
+        float: left;
+        margin-right: 2px;
+      }
+
+      .item div {
+        background-color: #666;
+        color: #fff;
+        padding: 2px 4px;
+        border-radius: 2px;
+        width: 150px;
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+      }
+
+      .item small {
+        display: block;
+      }
+
+      .item input {
+        position: absolute;
+        top: 50%;
+        right: 4px;
+        transform: translate(0, -50%);
+        display: none;
+      }
+
+      .item:hover input {
+        display: block;
+      }
+
+      form img {
+        display: block;
+        border: 1px solid #999;
+        width: 100px;
+        height: 100px;
+        cursor: pointer;
+      }
+    </style>
+  </head>
+
+  <body>
+    <header>
+      <h1><a href="index.html">Map Maintainence</a></h1>
+    </header>
+
+    <nav>
+      <a href="admin.html">Admin</a>
+      <a href="adminAddRec.html">Admin Add Border</a>
+      <a href="Player.html">Player</a>
+    </nav>
+
+    <!-- Vue ----------------------------------------------------------------->
+    <main id="app" v-cloak>
+      <div id="panel">
+        {{ markers.length }} marker(s)
+        <button @click="removeAll">Remove All</button>
+      </div>
+
+      <div id="items">
+        <div class="item" v-for="m of markers" @click="panTo(m)">
+          <img :src="m.image" />
+          <div>{{ m.label }}</div>
+          <small>
+            {{ m.position.lat() | number(6) }}, {{ m.position.lng() | number(6)
+            }}
+          </small>
+          <input type="image" src="image/remove.png" @click.stop="remove(m)" />
+        </div>
+      </div>
+
+      <div id="map"></div>
+
+      <div hidden>
+        <form id="info" @submit.prevent="save">
+          <div>
+            <input v-model.trim="label" required @keydown.esc="cancel" />
+          </div>
+          <label>
+            <input type="file" hidden @change="change" />
+            <img :src="image" />
+          </label>
+          <div>
+            <button>Save</button>
+            <button @click.prevent="cancel">Cancel</button>
+          </div>
+        </form>
+      </div>
+    </main>
+
+    <script src="https://www.gstatic.com/firebasejs/7.17.1/firebase-app.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/7.17.1/firebase-firestore.js"></script>
+    <script src="https://maps.googleapis.com/maps/api/js?key=AIzaSyCZRKcOdA99D4olqOR0JFlBhY2uJL7nyc8&libraries=geometry"></script>
+    <script src="js/jquery.slim.js"></script>
+    <script src="js/vue.js"></script>
+    <script src="js/app.js"></script>
+    <script>
+      // ====================================================================
+      // Firebase
+      // ====================================================================
+      firebase.initializeApp({
+        projectId: 'chanhy-981018',
+      });
+
+      const ref = firebase.firestore().collection('markers');
+      const ref2 = firebase.firestore().collection('border');
+
+      // ====================================================================
+      // Vue
+      // ====================================================================
+      const vm = new Vue({
+        el: '#app',
+        data: {
+          markers: [],
+          rectangles: [],
+          id: '',
+          label: '',
+          image: '',
+        },
+        methods: {
+          removeAll() {
+            vm.markers.forEach(m => ref.doc(m.id).delete());
+          },
+          remove(m) {
+            ref.doc(m.id).delete();
+          },
+          cancel() {
+            info.close();
+          },
+          change(e) {
+            let f = e.target.files[0];
+            crop(f, 100, 100, 'dataURL', 'image/').then(
+              dataURL => (vm.image = dataURL)
+            );
+            e.target.value = '';
+          },
+          save() {
+            picname = '';
+            if (vm.label == 'Boom') {
+              picname = vm.label;
+            } else if (vm.label == 'Exp') {
+              picname = vm.label;
+            } else if (vm.label == 'Life') {
+              picname = vm.label;
+            } else {
+              picname = 'Portal';
+            }
+
+            ref.doc(vm.id).update({
+              label: vm.label,
+              image: 'image/' + picname + '.png',
+            });
+
+            info.close();
+          },
+          panTo(m) {
+            map.panTo(m.getPosition());
+            m.setAnimation(gm.Animation.DROP);
+            setTimeout(() => m.setAnimation(null), 3000);
+
+            gm.event.trigger(m, 'click');
+          },
+        },
+        created() {
+          ref.onSnapshot(snap => {
+            snap.docChanges().forEach(change => {
+              const { type, doc } = change;
+
+              if (type == 'added') {
+                addMarker(doc.id, doc.data());
+              }
+
+              if (type == 'removed') {
+                let m = vm.markers.find(m => m.id == doc.id);
+                m.setMap(null);
+                let i = vm.markers.indexOf(m);
+                vm.markers.splice(i, 1);
+              }
+
+              if (type == 'modified') {
+                picname = '';
+                let m = vm.markers.find(m => m.id == doc.id);
+                let data = doc.data();
+
+                if (vm.label == 'Boom') {
+                  picname = data.label;
+                } else if (vm.label == 'Exp') {
+                  picname = data.label;
+                } else if (vm.label == 'Life') {
+                  picname = data.label;
+                } else {
+                  picname = 'Portal';
+                }
+
+                m.setOptions({
+                  position: data.position,
+                  label: data.label,
+                  image: 'image/' + picname + '.png',
+                  icon: {
+                    url: 'image/' + picname + '.png',
+                    scaledSize: new google.maps.Size(60, 60),
+                  },
+                });
+              }
+            });
+          });
+
+          ref2.onSnapshot(snap => {
+            snap.docChanges().forEach(change => {
+              const { type, doc } = change;
+
+              if (type == 'added') {
+                update(doc.id, doc.data());
+              }
+            });
+          });
+        },
+      });
+
+      // ====================================================================
+      // Google Maps
+      // ====================================================================
+
+      const gm = google.maps;
+
+      const center = {
+        lat: 3.204215,
+        lng: 101.722704,
+      };
+
+      const map = new gm.Map($('#map')[0], {
+        center,
+        zoom: 16,
+        disableDefaultUI: true,
+        clickableIcons: false,
+        disableDoubleClickZoom: true,
+      });
+
+      //   map.addListener('dblclick', e => {
+      //     let inside = gm.geometry.poly.containsLocation(e.getPosition(), vm.rectangles[0]);
+
+      //     if (!inside) {
+      //         m.setMap(null);
+      //         return;
+      //     }
+
+      //     ref.doc().set({
+      //       position: e.latLng.toJSON(),
+      //       label: 'Exp',
+      //       image: 'image/Exp2.png',
+      //     });
+      //   });
+
+      const info = new gm.InfoWindow({
+        content: $('#info')[0],
+      });
+
+      info.addListener('domready', e => {
+        $('#info input').focus();
+      });
+
+      function addMarker(id, data) {
+        picname = '';
+
+        if (data.label == 'Boom') {
+          picname = data.label;
+        } else if (data.label == 'Exp') {
+          picname = data.label;
+        } else if (data.label == 'Life') {
+          picname = data.label;
+        } else {
+          picname = 'Portal';
+        }
+
+        console.log(picname);
+
+        let m = new gm.Marker({
+          map,
+          animation: gm.Animation.DROP,
+          draggable: false,
+          id,
+          position: data.position,
+          label: data.label,
+          image: 'image/' + picname + '.png',
+          icon: {
+            url: 'image/' + picname + '.png',
+            scaledSize: new google.maps.Size(60, 60),
+          },
+        });
+
+        vm.markers.push(m);
+
+        m.addListener('dblclick', e => {
+          ref.doc(m.id).delete();
+        });
+
+        m.addListener('dragend', e => {
+          ref.doc(m.id).update({
+            position: e.latLng.toJSON(),
+          });
+        });
+
+        m.addListener('click', e => {
+          vm.id = m.id;
+          vm.label = m.label;
+          vm.image = m.image;
+
+          info.open(map, m);
+        });
+      }
+
+      function update(id, data) {
+        let rect = new gm.Rectangle({
+          map,
+          id,
+          bounds: {
+            north: data.position.north,
+            south: data.position.south,
+            east: data.position.east,
+            west: data.position.west,
+          },
+          strokeColor: 'red',
+          strokeWeight: 5,
+          fillOpacity: 0,
+        });
+
+        rect.addListener('dblclick', e => {
+          ref.doc().set({
+            position: e.latLng.toJSON(),
+            label: 'Exp',
+            image: 'image/Exp.png',
+          });
+        });
+      }
+
+      vm.rectangles.push(rect);
+    </script>
+  </body>
+</html>

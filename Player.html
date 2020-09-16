@@ -1,0 +1,571 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <link rel="shortcut icon" href="images/favicon.png" />
+    <link rel="stylesheet" href="css/app.css" />
+    <title>Mini Game</title>
+    <style>
+      main {
+        display: grid;
+      }
+
+      #map {
+        border: 1px solid #333;
+      }
+
+      #panel,
+      #lives {
+        background-color: #fff;
+        border: 1px solid #999;
+        border-radius: 5px;
+        margin: 5px;
+        padding: 5px;
+        font-size: 16px;
+      }
+
+      #panel img {
+        width: 24px;
+      }
+
+      #panel * {
+        vertical-align: middle;
+      }
+
+      #lives img {
+        width: 24px;
+      }
+
+      #lives * {
+        vertical-align: middle;
+      }
+    </style>
+  </head>
+
+  <body>
+    <header>
+      <h1><a href="index.html">Mini Game</a></h1>
+    </header>
+
+    <nav></nav>
+
+    <!-- Vue ----------------------------------------------------------------->
+    <main id="app" v-cloak>
+      <div id="map"></div>
+
+      <div hidden>
+        <div id="panel">
+          <div>
+            <img src="image/Exp.png" />
+            <span>EXP : {{ exp }}</span>
+          </div>
+          <div>
+            <img src="image/level.png" />
+            <span>Level: {{ level }}</span>
+          </div>
+        </div>
+      </div>
+      <div hidden>
+        <div id="lives">
+          <div>
+            <img src="image/Life.png" />
+            <span>{{ lives }} lives</span>
+          </div>
+        </div>
+      </div>
+    </main>
+
+    <script src="https://www.gstatic.com/firebasejs/7.17.1/firebase-app.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/7.17.1/firebase-firestore.js"></script>
+    <script src="https://maps.googleapis.com/maps/api/js?key=AIzaSyCZRKcOdA99D4olqOR0JFlBhY2uJL7nyc8&libraries=geometry"></script>
+    <script src="js/jquery.slim.js"></script>
+    <script src="js/vue.js"></script>
+    <script src="js/app.js"></script>
+    <script>
+      //=============================================================================
+      //Firebase
+      //=============================================================================
+      firebase.initializeApp({
+        projectId: 'chanhy-981018',
+      });
+
+      const ref = firebase.firestore().collection('markers');
+      const ref2 = firebase.firestore().collection('border');
+      const saveRef = firebase.firestore().collection('history');
+
+      // ====================================================================
+      // Vue
+      // ====================================================================
+      const boom = new Audio('audio/Boom.mp3');
+      const exp = new Audio('audio/Exp.mp3');
+      const life = new Audio('audio/Life.mp3');
+      const slow = new Audio('audio/slow.mp3');
+      const fast = new Audio('audio/fast.mp3');
+      const racing = new Audio('audio/racing.mp3');
+
+      let speed = 10;
+      let radius = 50;
+      let levCap = 2;
+      let pNum = 1;
+      let name = '';
+
+      const vm = new Vue({
+        el: '#app',
+        data: {
+          markers: [],
+          win: false,
+          exp: 0,
+          level: 0,
+          lives: 3,
+          center: { lat: 3.215, lng: 101.73 },
+          rect: [],
+          totalExp: 0,
+        },
+        methods: {
+          move(x, y) {
+            let oldPosition = map.getCenter();
+            map.panBy(x * speed, y * speed);
+            let newPosition = map.getCenter();
+
+            if (vm.rect[pNum - 1].bounds.contains(newPosition)) {
+              player.setPosition(newPosition);
+            } else {
+              map.setCenter(oldPosition);
+            }
+
+            visionCircle.setCenter(player?.position);
+
+            // Update marker's distance and visibility
+            for (let m of vm.markers.filter(m => !m.found)) {
+              let playerPosition = player.getPosition();
+              let markerPosition = m.getPosition();
+              m.distance = gm.geometry.spherical.computeDistanceBetween(
+                playerPosition,
+                markerPosition
+              );
+
+              if (m.distance <= radius) {
+                m.setVisible(true);
+                if (m.label == `Portal${pNum}` && vm.level >= levCap) {
+                  m.setVisible(true);
+                } else if (m.label != `Portal${pNum}`) {
+                  m.setVisible(true);
+                } else {
+                  m.setVisible(false);
+                }
+              } else {
+                m.setVisible(false);
+              }
+
+              if (m.distance >= 150 && m.distance <= 200) {
+                fast.play();
+                slow.loop = false;
+                racing.loop = false;
+              }
+              if (m.distance <= 100) {
+                racing.play();
+                slow.loop = false;
+                fast.loop = false;
+              }
+
+              if (m.distance < 10) {
+                m.found = true;
+                m.setVisible(false);
+                switch (m.label) {
+                  case 'Boom':
+                    vm.lives--;
+                    boom.play();
+                    break;
+                  case 'Exp':
+                    vm.exp += 100;
+                    vm.totalExp += 100;
+                    exp.play();
+                    break;
+                  case 'Life':
+                    vm.lives++;
+                    life.play();
+                    break;
+                  case 'Portal' + pNum:
+                    pNum++;
+
+                    let portal = vm.markers.find(
+                      portal => portal.label == 'Portal' + pNum
+                    );
+
+                    if (portal) {
+                      vm.center.lat = portal.position.lat() - 0.001;
+                      vm.center.lng = portal.position.lng() - 0.001;
+                    }
+                    map.setCenter(vm.center);
+                    player.setPosition(vm.center);
+                    levCap += 2;
+                    radius = 50;
+                    vm.lives--;
+                    break;
+                }
+
+                if (vm.exp >= 200) {
+                  vm.level++;
+                  vm.exp = 0;
+                  radius += 20;
+                  visionCircle.setRadius(radius);
+                }
+
+                if (pNum > vm.rect.length) {
+                  vm.win = true;
+
+                  name = prompt('You Win! Please Enter Your Name: ');
+                  saveRef.doc().set({
+                    name: name,
+                    level: vm.level,
+                    exp: vm.totalExp,
+                    lives: vm.lives,
+                    state: vm.win,
+                  });
+                  setTimeout(() => {
+                    location = 'index.html'
+                  }, 3000);;
+                }
+              }
+            }
+
+            if (vm.lives <= 0) {
+              vm.win = false;
+
+              name = prompt(
+                'You Lost! Please Try Again! Please Enter Your Name: '
+              );
+              saveRef.doc().set({
+                name: name,
+                level: vm.level,
+                exp: vm.totalExp,
+                lives: vm.lives,
+                state: vm.win,
+              });
+              setTimeout(() => {
+                    location = 'index.html'
+                  }, 3000);;
+            }
+          },
+        },
+        mounted() {
+          $(document).keydown(e => {
+            if (vm.win) return;
+
+            vm.step++;
+
+            switch (e.key) {
+              case 'a':
+              case 'ArrowLeft':
+                vm.move(-1, 0);
+                player.setIcon('image/player-left.gif');
+                break;
+              case 'd':
+              case 'ArrowRight':
+                vm.move(+1, 0);
+                player.setIcon('image/player-right.gif');
+                break;
+              case 'w':
+              case 'ArrowUp':
+                vm.move(0, -1);
+                player.setIcon('image/player-up.gif');
+                break;
+              case 's':
+              case 'ArrowDown':
+                vm.move(0, +1);
+                player.setIcon('image/player-down.gif');
+                break;
+              case 'x':
+                speed = 20;
+                break;
+            }
+          });
+          $(document).keyup(e => {
+            switch (e.key) {
+              case 'x':
+                speed = 10;
+                break;
+            }
+          });
+        },
+        created() {
+          // TODO(4): Firebase --> detect changes
+          ref.onSnapshot(snap => {
+            snap.docChanges().forEach(change => {
+              const { type, doc } = change;
+
+              // TODO(5): Record added --> add marker
+              if (type == 'added') {
+                addMarker2(doc.id, doc.data());
+              }
+            });
+          });
+          ref2.onSnapshot(snap => {
+            snap.docChanges().forEach(change => {
+              const { type, doc } = change;
+
+              if (type == 'added') {
+                update(doc.id, doc.data());
+              }
+            });
+          });
+          slow.play();
+          slow.loop = true;
+        },
+      });
+
+      // ============================================================================
+      // GOOGLE MAP
+      // ============================================================================
+      const gm = google.maps;
+
+      let center = new gm.LatLng(vm.center);
+
+      let map = new gm.Map($('#map')[0], {
+        center: vm.center,
+        zoom: 18,
+        disableDefaultUI: true,
+        clickableIcons: false,
+        gestureHandling: 'none',
+        styles: [
+          {
+            elementType: 'geometry',
+            stylers: [
+              {
+                color: '#212121',
+              },
+            ],
+          },
+          {
+            elementType: 'labels.icon',
+            stylers: [
+              {
+                visibility: 'off',
+              },
+            ],
+          },
+          {
+            elementType: 'labels.text.fill',
+            stylers: [
+              {
+                color: '#757575',
+              },
+            ],
+          },
+          {
+            elementType: 'labels.text.stroke',
+            stylers: [
+              {
+                color: '#212121',
+              },
+            ],
+          },
+          {
+            featureType: 'administrative',
+            elementType: 'geometry',
+            stylers: [
+              {
+                color: '#757575',
+              },
+            ],
+          },
+          {
+            featureType: 'administrative.country',
+            elementType: 'labels.text.fill',
+            stylers: [
+              {
+                color: '#9e9e9e',
+              },
+            ],
+          },
+          {
+            featureType: 'administrative.locality',
+            elementType: 'labels.text.fill',
+            stylers: [
+              {
+                color: '#bdbdbd',
+              },
+            ],
+          },
+          {
+            featureType: 'poi',
+            elementType: 'labels.text.fill',
+            stylers: [
+              {
+                color: '#757575',
+              },
+            ],
+          },
+          {
+            featureType: 'poi.park',
+            elementType: 'geometry',
+            stylers: [
+              {
+                color: '#181818',
+              },
+            ],
+          },
+          {
+            featureType: 'poi.park',
+            elementType: 'labels.text.fill',
+            stylers: [
+              {
+                color: '#616161',
+              },
+            ],
+          },
+          {
+            featureType: 'poi.park',
+            elementType: 'labels.text.stroke',
+            stylers: [
+              {
+                color: '#1b1b1b',
+              },
+            ],
+          },
+          {
+            featureType: 'road',
+            elementType: 'geometry.fill',
+            stylers: [
+              {
+                color: '#2c2c2c',
+              },
+            ],
+          },
+          {
+            featureType: 'road',
+            elementType: 'labels.text.fill',
+            stylers: [
+              {
+                color: '#8a8a8a',
+              },
+            ],
+          },
+          {
+            featureType: 'road.arterial',
+            elementType: 'geometry',
+            stylers: [
+              {
+                color: '#373737',
+              },
+            ],
+          },
+          {
+            featureType: 'road.highway',
+            elementType: 'geometry',
+            stylers: [
+              {
+                color: '#3c3c3c',
+              },
+            ],
+          },
+          {
+            featureType: 'road.highway.controlled_access',
+            elementType: 'geometry',
+            stylers: [
+              {
+                color: '#4e4e4e',
+              },
+            ],
+          },
+          {
+            featureType: 'road.local',
+            elementType: 'labels.text.fill',
+            stylers: [
+              {
+                color: '#616161',
+              },
+            ],
+          },
+          {
+            featureType: 'transit',
+            elementType: 'labels.text.fill',
+            stylers: [
+              {
+                color: '#757575',
+              },
+            ],
+          },
+          {
+            featureType: 'water',
+            elementType: 'geometry',
+            stylers: [
+              {
+                color: '#000000',
+              },
+            ],
+          },
+          {
+            featureType: 'water',
+            elementType: 'labels.text.fill',
+            stylers: [
+              {
+                color: '#3d3d3d',
+              },
+            ],
+          },
+        ],
+      });
+
+      const panel = $('#panel')[0];
+      map.controls[gm.ControlPosition.TOP_LEFT].push(panel);
+
+      const lives = $('#lives')[0];
+      map.controls[gm.ControlPosition.TOP_RIGHT].push(lives);
+
+      const player = new gm.Marker({
+        position: vm.center,
+        map,
+        icon: 'image/player-down.gif',
+        animation: gm.Animation.DROP,
+        life: vm.lives,
+      });
+
+      function update(id, data) {
+        let rect = new gm.Rectangle({
+          map,
+          id,
+          bounds: {
+            north: data.position.north,
+            south: data.position.south,
+            east: data.position.east,
+            west: data.position.west,
+          },
+          strokeColor: 'red',
+          strokeWeight: 10,
+          fillOpacity: 0,
+        });
+
+        vm.rect.push(rect);
+      }
+
+      function addMarker2(id, data) {
+        let marker = new gm.Marker({
+          map,
+          animation: gm.Animation.DROP,
+          visible: false,
+          id,
+          position: data.position,
+          label: data.label,
+          icon: { url: data.image, scaledSize: new gm.Size(40, 40) },
+        });
+
+        vm.markers.push(marker);
+      }
+
+      //=============================================================================
+      //Vision function
+      //=============================================================================
+      const visionCircle = new gm.Circle({
+        map,
+        strokeColor: 'yellow',
+        fillColor: 'yellow',
+        fillOpacity: 0.5,
+      });
+
+      visionCircle.setCenter(player?.position);
+      visionCircle.setRadius(radius);
+    </script>
+  </body>
+</html>
